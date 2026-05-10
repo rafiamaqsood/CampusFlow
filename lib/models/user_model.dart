@@ -1,5 +1,7 @@
 enum UserRole { student, faculty, admin, viceChancellor }
 
+enum AvailabilityStatus { inOffice, busy, away, offDuty }
+
 class UserModel {
   final String uid;
   final String email;
@@ -12,8 +14,11 @@ class UserModel {
   final String? studentId;
   final String? facultyId;
   final String? officerId;
-  final String? office;
+  final String? office; // e.g., "Accounts Office"
   final String? designation;
+  final List<String>? handledRequestTypes; // e.g., ["Fee Installments", "Fine Waiver"]
+  final AvailabilityStatus availabilityStatus;
+  final DateTime? lastStatusUpdate;
 
   UserModel({
     required this.uid,
@@ -27,6 +32,9 @@ class UserModel {
     this.officerId,
     this.office,
     this.designation,
+    this.handledRequestTypes,
+    this.availabilityStatus = AvailabilityStatus.offDuty,
+    this.lastStatusUpdate,
   });
 
   Map<String, dynamic> toMap() {
@@ -42,6 +50,9 @@ class UserModel {
       'officerId': officerId,
       'office': office,
       'designation': designation,
+      'handledRequestTypes': handledRequestTypes,
+      'availabilityStatus': availabilityStatus.name,
+      'lastStatusUpdate': lastStatusUpdate?.toIso8601String(),
     };
   }
 
@@ -61,6 +72,16 @@ class UserModel {
       officerId: map['officerId']?.toString(),
       office: map['office']?.toString(),
       designation: map['designation']?.toString(),
+      handledRequestTypes: map['handledRequestTypes'] != null 
+          ? List<String>.from(map['handledRequestTypes']) 
+          : null,
+      availabilityStatus: AvailabilityStatus.values.firstWhere(
+        (e) => e.name == map['availabilityStatus']?.toString(),
+        orElse: () => AvailabilityStatus.offDuty,
+      ),
+      lastStatusUpdate: map['lastStatusUpdate'] != null 
+          ? DateTime.tryParse(map['lastStatusUpdate'].toString()) 
+          : null,
     );
   }
 }
