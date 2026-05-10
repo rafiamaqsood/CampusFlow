@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
+import '../services/admin_service.dart';
 import '../models/user_model.dart';
+import 'admin/request_queue_screen.dart';
+import 'admin/active_tokens_screen.dart';
 
 class StudentDashboard extends StatelessWidget {
   final UserModel user;
@@ -79,9 +82,16 @@ class FacultyDashboard extends StatelessWidget {
   }
 }
 
-class AdminDashboard extends StatelessWidget {
+class AdminDashboard extends StatefulWidget {
   final UserModel user;
   const AdminDashboard({super.key, required this.user});
+
+  @override
+  State<AdminDashboard> createState() => _AdminDashboardState();
+}
+
+class _AdminDashboardState extends State<AdminDashboard> {
+  final AdminService _adminService = AdminService();
 
   @override
   Widget build(BuildContext context) {
@@ -93,7 +103,9 @@ class AdminDashboard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildWelcomeHeader(user.name),
+            _buildWelcomeHeader(widget.user.name),
+            const SizedBox(height: 24),
+            _buildStatusCard(),
             const SizedBox(height: 32),
             _buildSectionTitle('Office Management'),
             const SizedBox(height: 16),
@@ -104,8 +116,24 @@ class AdminDashboard extends StatelessWidget {
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
               children: [
-                _buildActionCard('Manage Queues', Icons.queue_outlined, Colors.red),
-                _buildActionCard('System Alerts', Icons.warning_amber_outlined, Colors.amber),
+                _buildActionCard(
+                  'Manage Requests', 
+                  Icons.queue_outlined, 
+                  Colors.red,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => RequestQueueScreen(officer: widget.user)),
+                  ),
+                ),
+                _buildActionCard(
+                  'Active Tokens', 
+                  Icons.confirmation_number_outlined, 
+                  Colors.amber,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => ActiveTokensScreen(officerId: widget.user.uid)),
+                  ),
+                ),
                 _buildActionCard('Office Stats', Icons.bar_chart_outlined, Colors.cyan),
                 _buildActionCard('Settings', Icons.settings_outlined, Colors.blueGrey),
               ],
@@ -114,6 +142,81 @@ class AdminDashboard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildStatusCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue[700]!, Colors.blue[500]!],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Current Status',
+                  style: GoogleFonts.inter(color: Colors.white.withOpacity(0.8), fontSize: 14),
+                ),
+                Text(
+                  _getStatusText(widget.user.availabilityStatus),
+                  style: GoogleFonts.outfit(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuButton<AvailabilityStatus>(
+            initialValue: widget.user.availabilityStatus,
+            onSelected: (status) {
+              _adminService.updateAvailability(widget.user.uid, widget.user.officerId ?? widget.user.uid, status);
+            },
+            itemBuilder: (context) => AvailabilityStatus.values.map((status) {
+              return PopupMenuEntry<AvailabilityStatus>(
+                value: status,
+                child: Row(
+                  children: [
+                    _getStatusIcon(status),
+                    const SizedBox(width: 8),
+                    Text(_getStatusText(status)),
+                  ],
+                ),
+              );
+            }).toList(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+              child: const Text('Change', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getStatusText(AvailabilityStatus status) {
+    switch (status) {
+      case AvailabilityStatus.inOffice: return 'In Office';
+      case AvailabilityStatus.busy: return 'Busy';
+      case AvailabilityStatus.away: return 'Away';
+      case AvailabilityStatus.offDuty: return 'Off Duty';
+    }
+  }
+
+  Widget _getStatusIcon(AvailabilityStatus status) {
+    switch (status) {
+      case AvailabilityStatus.inOffice: return const Icon(Icons.check_circle, color: Colors.green);
+      case AvailabilityStatus.busy: return const Icon(Icons.remove_circle, color: Colors.orange);
+      case AvailabilityStatus.away: return const Icon(Icons.access_time_filled, color: Colors.amber);
+      case AvailabilityStatus.offDuty: return const Icon(Icons.do_not_disturb_on, color: Colors.red);
+    }
   }
 }
 
@@ -195,13 +298,13 @@ Widget _buildSectionTitle(String title) {
   );
 }
 
-Widget _buildActionCard(String title, IconData icon, Color color) {
+Widget _buildActionCard(String title, IconData icon, Color color, {VoidCallback? onTap}) {
   return Card(
     elevation: 2,
     shadowColor: color.withOpacity(0.1),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     child: InkWell(
-      onTap: () {},
+      onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Padding(
         padding: const EdgeInsets.all(20.0),

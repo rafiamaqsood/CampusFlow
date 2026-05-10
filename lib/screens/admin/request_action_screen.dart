@@ -1,0 +1,217 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import '../../models/appointment_request_model.dart';
+import '../../services/admin_service.dart';
+
+class RequestActionScreen extends StatefulWidget {
+  final AppointmentRequestModel request;
+  const RequestActionScreen({super.key, required this.request});
+
+  @override
+  State<RequestActionScreen> createState() => _RequestActionScreenState();
+}
+
+class _RequestActionScreenState extends State<RequestActionScreen> {
+  final _adminService = AdminService();
+  final _reasonController = TextEditingController();
+  bool _isProcessing = false;
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleAccept() async {
+    final TimeOfDay? pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+
+    if (pickedTime != null) {
+      setState(() => _isProcessing = true);
+      try {
+        final now = DateTime.now();
+        final slotTime = DateTime(now.year, now.month, now.day, pickedTime.hour, pickedTime.minute);
+        
+        // Generate a simple token based on timestamp
+        final token = "TK-${now.millisecondsSinceEpoch.toString().substring(9)}";
+
+        await _adminService.acceptRequest(
+          requestId: widget.request.id,
+          timeSlot: slotTime,
+          tokenNumber: token,
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Request Accepted. Token: $token')),
+          );
+          Navigator.pop(context);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  Future<void> _handleReject() async {
+    return showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Reject Request', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Please provide a reason for rejection:', style: GoogleFonts.inter()),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _reasonController,
+              decoration: const InputDecoration(
+                hintText: 'e.g., Missing documents',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              if (_reasonController.text.trim().isEmpty) return;
+              
+              Navigator.pop(context);
+              setState(() => _isProcessing = true);
+              
+              try {
+                await _adminService.rejectRequest(
+                  requestId: widget.request.id,
+                  reason: _reasonController.text.trim(),
+                );
+                if (mounted) Navigator.pop(context);
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                }
+              } finally {
+                if (mounted) setState(() => _isProcessing = false);
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FE),
+      appBar: AppBar(
+        title: Text('Process Request', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+      ),
+      body: _isProcessing 
+        ? const Center(child: CircularProgressIndicator())
+        : SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfoCard(),
+                const SizedBox(height: 32),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _handleReject,
+                        icon: const Icon(Icons.close),
+                        label: const Text('Reject'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _handleAccept,
+                        icon: const Icon(Icons.check),
+                        label: const Text('Accept'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+    );
+  }
+
+  Widget _buildInfoCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 10))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('STUDENT INFORMATION', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 16),
+          _infoRow(Icons.person_outline, 'Name', widget.request.studentName),
+          _infoRow(Icons.fingerprint, 'Student ID', widget.request.studentId),
+          const Divider(height: 32),
+          Text('REQUEST DETAILS', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 16),
+          _infoRow(Icons.description_outlined, 'Type', widget.request.requestType),
+          _infoRow(Icons.calendar_today_outlined, 'Submitted', DateFormat('MMM dd, yyyy - hh:mm a').format(widget.request.createdAt)),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: Colors.blue),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600])),
+              Text(value, style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
