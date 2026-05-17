@@ -5,9 +5,16 @@ import '../../models/user_model.dart';
 import '../../services/admin_service.dart';
 import 'request_action_screen.dart';
 
-class RequestQueueScreen extends StatelessWidget {
+class RequestQueueScreen extends StatefulWidget {
   final UserModel officer;
   const RequestQueueScreen({super.key, required this.officer});
+
+  @override
+  State<RequestQueueScreen> createState() => _RequestQueueScreenState();
+}
+
+class _RequestQueueScreenState extends State<RequestQueueScreen> {
+  String _searchQuery = '';
 
   @override
   Widget build(BuildContext context) {
@@ -19,28 +26,84 @@ class RequestQueueScreen extends StatelessWidget {
         foregroundColor: Colors.black,
         elevation: 0,
       ),
-      body: StreamBuilder<List<AppointmentRequestModel>>(
-        stream: AdminService().getPendingRequests(officer.uid),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return _buildEmptyState();
-          }
+      body: Column(
+        children: [
+          _buildSearchBar(),
+          Expanded(
+            child: StreamBuilder<List<AppointmentRequestModel>>(
+              stream: AdminService().getPendingRequests(widget.officer.uid),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return _buildEmptyState();
+                }
 
-          final requests = snapshot.data!;
+                final requests = snapshot.data!;
+                final filteredRequests = requests.where((r) {
+                  final query = _searchQuery.toLowerCase();
+                  return r.studentName.toLowerCase().contains(query) || 
+                         (r.studentDept?.toLowerCase().contains(query) ?? false) ||
+                         r.requestType.toLowerCase().contains(query);
+                }).toList();
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: requests.length,
-            itemBuilder: (context, index) {
-              final request = requests[index];
-              return _buildRequestCard(context, request);
-            },
-          );
-        },
+                if (filteredRequests.isEmpty) {
+                  return _buildNoResultsState();
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: filteredRequests.length,
+                  itemBuilder: (context, index) {
+                    final request = filteredRequests[index];
+                    return _buildRequestCard(context, request);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: TextField(
+        onChanged: (value) => setState(() => _searchQuery = value),
+        decoration: InputDecoration(
+          hintText: 'Search by student name or dept...',
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoResultsState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search_off_outlined, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text(
+            'No matching requests found',
+            style: GoogleFonts.inter(color: Colors.grey[600]),
+          ),
+        ],
       ),
     );
   }
@@ -95,8 +158,13 @@ class RequestQueueScreen extends StatelessWidget {
                       style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     Text(
+                      '${request.studentDept ?? 'No Dept'} • Sem ${request.studentSemester ?? 'N/A'}',
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[500]),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
                       request.requestType,
-                      style: GoogleFonts.inter(fontSize: 14, color: Colors.grey[600]),
+                      style: GoogleFonts.inter(fontSize: 14, color: Colors.grey[700]),
                     ),
                   ],
                 ),

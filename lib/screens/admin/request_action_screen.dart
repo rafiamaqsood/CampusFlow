@@ -23,6 +23,17 @@ class _RequestActionScreenState extends State<RequestActionScreen> {
     super.dispose();
   }
 
+  Future<bool> _checkConflicts(DateTime slotTime) async {
+    final schedule = await _adminService.getOfficeSchedule(widget.request.officerId, slotTime).first;
+    for (var req in schedule) {
+      if (req.timeSlot != null) {
+        final diff = req.timeSlot!.difference(slotTime).inMinutes.abs();
+        if (diff < 15) return true; // 15-minute buffer
+      }
+    }
+    return false;
+  }
+
   Future<void> _handleAccept() async {
     final TimeOfDay? pickedTime = await showTimePicker(
       context: context,
@@ -30,11 +41,36 @@ class _RequestActionScreenState extends State<RequestActionScreen> {
     );
 
     if (pickedTime != null) {
+      final now = DateTime.now();
+      final slotTime = DateTime(now.year, now.month, now.day, pickedTime.hour, pickedTime.minute);
+      
       setState(() => _isProcessing = true);
+      
       try {
-        final now = DateTime.now();
-        final slotTime = DateTime(now.year, now.month, now.day, pickedTime.hour, pickedTime.minute);
+        final hasConflict = await _checkConflicts(slotTime);
         
+        if (hasConflict) {
+          setState(() => _isProcessing = false);
+          final bool? proceed = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Schedule Conflict'),
+              content: const Text('This time slot is very close to another appointment. Do you want to proceed anyway?'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Go Back')),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                  child: const Text('Proceed Anyway'),
+                ),
+              ],
+            ),
+          );
+          
+          if (proceed != true) return;
+          setState(() => _isProcessing = true);
+        }
+
         // Generate a simple token based on timestamp
         final token = "TK-${now.millisecondsSinceEpoch.toString().substring(9)}";
 
@@ -88,7 +124,10 @@ class _RequestActionScreenState extends State<RequestActionScreen> {
             onPressed: () async {
               if (_reasonController.text.trim().isEmpty) return;
               
-              Navigator.pop(context);
+              final messenger = ScaffoldMessenger.of(this.context);
+              final navigator = Navigator.of(this.context);
+              
+              Navigator.pop(context); // Close dialog
               setState(() => _isProcessing = true);
               
               try {
@@ -96,10 +135,10 @@ class _RequestActionScreenState extends State<RequestActionScreen> {
                   requestId: widget.request.id,
                   reason: _reasonController.text.trim(),
                 );
-                if (mounted) Navigator.pop(context);
+                if (mounted) navigator.pop();
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                  messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
                 }
               } finally {
                 if (mounted) setState(() => _isProcessing = false);
@@ -185,12 +224,26 @@ class _RequestActionScreenState extends State<RequestActionScreen> {
           Text('STUDENT INFORMATION', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
           const SizedBox(height: 16),
           _infoRow(Icons.person_outline, 'Name', widget.request.studentName),
-          _infoRow(Icons.fingerprint, 'Student ID', widget.request.studentId),
+          if (widget.request.studentDept != null)
+            _infoRow(Icons.school_outlined, 'Department', widget.request.studentDept!),
+          if (widget.request.studentSemester != null)
+            _infoRow(Icons.calendar_view_day_outlined, 'Semester', widget.request.studentSemester!),
           const Divider(height: 32),
           Text('REQUEST DETAILS', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
           const SizedBox(height: 16),
           _infoRow(Icons.description_outlined, 'Type', widget.request.requestType),
+          _infoRow(
+            Icons.info_outline, 
+            'Student Reason', 
+            (widget.request.studentReason == null || widget.request.studentReason!.isEmpty) 
+              ? 'Not provided' 
+              : widget.request.studentReason!
+          ),
           _infoRow(Icons.calendar_today_outlined, 'Submitted', DateFormat('MMM dd, yyyy - hh:mm a').format(widget.request.createdAt)),
+          const Divider(height: 32),
+          Text('SYSTEM REFERENCE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 16),
+          _infoRow(Icons.fingerprint, 'Student UID', widget.request.studentId),
         ],
       ),
     );

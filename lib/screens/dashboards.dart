@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../services/auth_service.dart';
-import '../services/admin_service.dart';
-import '../models/user_model.dart';
-import 'admin/request_queue_screen.dart';
-import 'admin/active_tokens_screen.dart';
+import 'package:intl/intl.dart';
+import 'package:campusflow/services/auth_service.dart';
+import 'package:campusflow/services/admin_service.dart';
+import 'package:campusflow/models/user_model.dart';
+import 'package:campusflow/models/office_model.dart';
+import 'package:campusflow/screens/admin/request_queue_screen.dart';
+import 'package:campusflow/screens/admin/active_tokens_screen.dart';
+import 'package:campusflow/screens/admin/request_history_screen.dart';
+import 'package:campusflow/screens/admin/daily_agenda_screen.dart';
+import 'package:campusflow/screens/student/office_list_screen.dart';
 
 class StudentDashboard extends StatelessWidget {
   final UserModel user;
@@ -31,7 +36,15 @@ class StudentDashboard extends StatelessWidget {
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
               children: [
-                _buildActionCard('Request Token', Icons.confirmation_number_outlined, Colors.blue),
+                _buildActionCard(
+                  'Request Token', 
+                  Icons.confirmation_number_outlined, 
+                  Colors.blue,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const OfficeListScreen()),
+                  ),
+                ),
                 _buildActionCard('Track Request', Icons.track_changes_outlined, Colors.orange),
                 _buildActionCard('Office Times', Icons.access_time_outlined, Colors.green),
                 _buildActionCard('My Profile', Icons.person_outline, Colors.purple),
@@ -109,6 +122,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
             const SizedBox(height: 32),
             _buildSectionTitle('Office Management'),
             const SizedBox(height: 16),
+            StreamBuilder<OfficeModel?>(
+              stream: _adminService.getOfficeByName(widget.user.office!),
+              builder: (context, snapshot) {
+                final office = snapshot.data;
+                if (office == null || office.announcement == null) {
+                  return const SizedBox.shrink();
+                }
+                return _buildActiveAlertCard(office);
+              },
+            ),
+            const SizedBox(height: 16),
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -134,12 +158,120 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     MaterialPageRoute(builder: (context) => ActiveTokensScreen(officerId: widget.user.uid)),
                   ),
                 ),
+                _buildActionCard(
+                  'Office Alert', 
+                  Icons.campaign_outlined, 
+                  Colors.deepPurple,
+                  onTap: () => _showAnnouncementDialog(context),
+                ),
+                _buildActionCard(
+                  'Daily Agenda', 
+                  Icons.calendar_today_rounded, 
+                  Colors.green,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => DailyAgendaScreen(officerId: widget.user.uid)),
+                  ),
+                ),
+                _buildActionCard(
+                  'Request History', 
+                  Icons.history_rounded, 
+                  Colors.blueGrey,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => RequestHistoryScreen(officerId: widget.user.uid)),
+                  ),
+                ),
                 _buildActionCard('Office Stats', Icons.bar_chart_outlined, Colors.cyan),
-                _buildActionCard('Settings', Icons.settings_outlined, Colors.blueGrey),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildActiveAlertCard(OfficeModel office) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple[50],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.deepPurple[100]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.campaign, color: Colors.deepPurple, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Active Alert',
+                style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.deepPurple[800], fontSize: 12),
+              ),
+              const Spacer(),
+              if (office.announcementUpdatedAt != null)
+                Text(
+                  'Set ${DateFormat('hh:mm a').format(office.announcementUpdatedAt!)}',
+                  style: GoogleFonts.inter(fontSize: 10, color: Colors.deepPurple[300]),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            office.announcement!,
+            style: GoogleFonts.inter(color: Colors.deepPurple[900], fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAnnouncementDialog(BuildContext context) async {
+    // Try to get current alert text
+    final office = await _adminService.getOfficeByName(widget.user.office!).first;
+    final controller = TextEditingController(text: office?.announcement);
+    
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Office Announcement', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Post an alert for all students visiting ${widget.user.office}:', style: GoogleFonts.inter()),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'e.g. Office closed for audit',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await _adminService.updateOfficeAnnouncement(widget.user.office!, null);
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Clear'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await _adminService.updateOfficeAnnouncement(widget.user.office!, controller.text.trim());
+              if (mounted) Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white),
+            child: const Text('Post Alert'),
+          ),
+        ],
       ),
     );
   }
@@ -179,7 +311,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               _adminService.updateAvailability(widget.user.uid, widget.user.officerId ?? widget.user.uid, status);
             },
             itemBuilder: (context) => AvailabilityStatus.values.map((status) {
-              return PopupMenuEntry<AvailabilityStatus>(
+              return PopupMenuItem<AvailabilityStatus>(
                 value: status,
                 child: Row(
                   children: [

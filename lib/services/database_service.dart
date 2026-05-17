@@ -1,5 +1,6 @@
 import 'package:firebase_database/firebase_database.dart';
 import '../models/user_model.dart';
+import '../models/office_model.dart';
 
 class DatabaseService {
   final FirebaseDatabase _db = FirebaseDatabase.instance;
@@ -33,27 +34,18 @@ class DatabaseService {
   // Save user profile in Realtime Database
   Future<void> saveUserProfile(UserModel user) async {
     try {
-      // 1. Determine the primary key to use for the detailed record
-      String primaryKey;
-      if (user.role == UserRole.student && user.studentId != null) {
-        primaryKey = user.studentId!;
-      } else if (user.role == UserRole.faculty && user.facultyId != null) {
-        primaryKey = user.facultyId!;
-      } else if (user.role == UserRole.admin && user.officerId != null) {
-        primaryKey = user.officerId!;
-      } else {
-        primaryKey = user.uid;
-      }
+      // Use the Firebase Auth UID as the primary key for all records
+      String primaryKey = user.uid;
 
-      // 2. Store a master record for role lookup and PK reference
+      // 1. Store a master record for role lookup and PK reference
       await _db.ref('users/${user.uid}').set({
         'role': user.role.name,
         'email': user.email,
         'name': user.name,
-        'profileKey': primaryKey, // Points to the ID used in the role-specific node
+        'profileKey': primaryKey, 
       });
 
-      // 3. Store detailed info in separate role-specific node using the PK
+      // 2. Store detailed info in separate role-specific node
       String rolePath = _getRolePath(user.role);
       await _db.ref('$rolePath/$primaryKey').set(user.toMap());
       
@@ -71,6 +63,43 @@ class DatabaseService {
       return Map<String, dynamic>.from(snapshot.value as Map);
     }
     return null;
+  }
+
+  // Fetch office by ID
+  Future<OfficeModel?> getOfficeById(String officeId) async {
+    final snapshot = await _db.ref('offices/$officeId').get();
+    if (snapshot.exists) {
+      final map = Map<String, dynamic>.from(snapshot.value as Map);
+      if (map['id'] == null) map['id'] = officeId;
+      return OfficeModel.fromMap(map);
+    }
+    return null;
+  }
+
+  // Fetch all offices
+  Future<List<OfficeModel>> getAllOffices() async {
+    final snapshot = await _db.ref('offices').get();
+    if (snapshot.exists) {
+      final value = snapshot.value;
+      final List<OfficeModel> offices = [];
+      if (value is Map) {
+        value.forEach((key, val) {
+          final map = Map<String, dynamic>.from(val);
+          if (map['id'] == null) map['id'] = key.toString();
+          offices.add(OfficeModel.fromMap(map));
+        });
+      } else if (value is List) {
+        for (int i = 0; i < value.length; i++) {
+          if (value[i] != null) {
+            final map = Map<String, dynamic>.from(value[i]);
+            if (map['id'] == null) map['id'] = i.toString();
+            offices.add(OfficeModel.fromMap(map));
+          }
+        }
+      }
+      return offices;
+    }
+    return [];
   }
 
   // Get user profile from role-specific node
@@ -92,15 +121,29 @@ class DatabaseService {
     }
   }
 
-  // --- Future Workflow Operations (Placeholders) ---
-  // (Updated to use Realtime DB refs)
-  
-  Future<void> requestToken({required String studentUid, required String officeName}) async {
-    await _db.ref('tokens').push().set({
-      'studentUid': studentUid,
-      'officeName': officeName,
-      'timestamp': ServerValue.timestamp,
-      'status': 'pending',
-    });
+  // --- Office Operations ---
+
+  Future<void> linkOfficerToOffice(String officerUid, String officeId) async {
+    try {
+      final ref = _db.ref('offices/$officeId/officerIds');
+      final snapshot = await ref.get();
+      List<String> officerIds = [];
+      
+      if (snapshot.exists) {
+        final value = snapshot.value;
+        if (value is List) {
+          officerIds = List<String>.from(value.where((e) => e != null));
+        } else if (value is Map) {
+          officerIds = value.values.map((v) => v.toString()).toList();
+        }
+      }
+      
+      if (!officerIds.contains(officerUid)) {
+        officerIds.add(officerUid);
+        await ref.set(officerIds);
+      }
+    } catch (e) {
+      print('Error linking officer to office: $e');
+    }
   }
 }
